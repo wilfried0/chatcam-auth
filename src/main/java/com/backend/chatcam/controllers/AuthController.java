@@ -1,13 +1,18 @@
 package com.backend.chatcam.controllers;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,11 +23,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.backend.chatcam.models.ERole;
 import com.backend.chatcam.models.Role;
 import com.backend.chatcam.models.User;
+import com.backend.chatcam.payload.request.LoginRequest;
 import com.backend.chatcam.payload.request.SignupRequest;
+import com.backend.chatcam.payload.response.JwtResponse;
 import com.backend.chatcam.payload.response.MessageResponse;
 import com.backend.chatcam.repository.RoleRepository;
 import com.backend.chatcam.repository.UserRepository;
 import com.backend.chatcam.security.jwt.JwtUtils;
+import com.backend.chatcam.security.services.UserDetailsImpl;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
@@ -43,6 +51,30 @@ public class AuthController {
 
 	@Autowired
 	JwtUtils jwtUtils;
+	
+	@PostMapping("/signin")
+	public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+
+		Authentication authentication = authenticationManager.authenticate(
+				new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+
+		SecurityContextHolder.getContext().setAuthentication(authentication);
+		String jwt = jwtUtils.generateJwtToken(authentication);
+		
+		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();		
+		List<String> roles = userDetails.getAuthorities().stream()
+				.map(item -> item.getAuthority())
+				.collect(Collectors.toList());
+
+		return ResponseEntity.ok(new JwtResponse(jwt, 
+												 userDetails.getId(), 
+												 userDetails.getUsername(), 
+												 userDetails.getEmail(), 
+												 userDetails.getFirstname(),
+												 userDetails.getLastname(),
+												 userDetails.getSexe(),
+												 roles));
+	}
 
 	@PostMapping("/signup")
 	public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
@@ -72,18 +104,18 @@ public class AuthController {
 
 		if (strRoles == null) {
 			Role userRole = roleRepository.findByName(ERole.ROLE_USER)
-					.orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+					.orElseThrow(() -> new RuntimeException("Error: Role "+ERole.ROLE_USER+" is not found."));
 			roles.add(userRole);
 		} else {
 			strRoles.forEach(role -> {
 				switch (role) {
-				case "admin":
+				case "ROLE_USER":
 					Role adminRole = roleRepository.findByName(ERole.ROLE_ADMIN)
 							.orElseThrow(() -> new RuntimeException("Error: Role is not found."));
 					roles.add(adminRole);
 
 					break;
-				case "mod":
+				case "ROLE_MODERATOR":
 					Role modRole = roleRepository.findByName(ERole.ROLE_MODERATOR)
 							.orElseThrow(() -> new RuntimeException("Error: Role is not found."));
 					roles.add(modRole);
